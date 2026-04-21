@@ -31,7 +31,7 @@ class PassthroughEvaluator:
 def _make_runner(agent) -> BenchmarkRunner:
     judge = LLMJudge(
         model_a="gpt-4o-mini",
-        model_b="gpt-4o-mini",
+        model_b="gpt-4o",
         tiebreaker_model="gpt-4o",
     )
     return BenchmarkRunner(
