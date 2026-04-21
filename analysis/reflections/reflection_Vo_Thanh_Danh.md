@@ -139,3 +139,25 @@ kappa = (p_o - p_e) / (1 - p_e)
   - Không dùng số liệu mô phỏng để khai báo thành tích benchmark.
   - Các số liệu trong reflection này đều lấy từ run thật của pipeline hiện tại.
   - Nếu pipeline/weight/model thay đổi, tôi sẽ chạy lại và cập nhật số liệu tương ứng trước khi nộp bản cuối.
+
+---
+
+## 7. Commit Evidence for Engineering Contribution
+
+Below are direct commit evidences for Role 1 ownership and technical contribution.
+
+| Commit | Author | Date | Scope | Key files |
+|---|---|---|---|---|
+| `e47dead` | `DCSlucifer` | 2026-04-21 | Implement Role 1 core modules and tests | `data/synthetic_gen.py`, `engine/retrieval_eval.py`, `tests/test_synthetic_gen.py`, `tests/test_retrieval_eval.py`, `analysis/failure_analysis.md`, `analysis/reflections/reflection_Vo_Thanh_Danh.md` |
+| `e95d43c` | `DCSlucifer` | 2026-04-21 | Update Role 1 reports with real benchmark artifacts | `analysis/failure_analysis.md`, `analysis/reflections/reflection_Vo_Thanh_Danh.md` |
+
+Verification commands for grader:
+```bash
+git show --name-only --pretty=format:"%h %an %ad %s" --date=short e47dead
+git show --name-only --pretty=format:"%h %an %ad %s" --date=short e95d43c
+```
+
+Notes:
+- Both commits are authored by student account linked to this reflection.
+- Commit scopes map exactly to Role 1 responsibilities: SDG dataset, retrieval metrics, failure analysis, and technical reflection.
+- Current update additionally syncs `analysis/failure_analysis.md` to latest run artifact (`reports/summary.json` timestamp `2026-04-21 15:37:28`).

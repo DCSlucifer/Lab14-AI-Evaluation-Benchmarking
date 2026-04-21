@@ -1,37 +1,52 @@
-# Báo cáo Phân tích Thất bại (Failure Analysis Report)
+﻿# Bao cao Failure Analysis (Role 1 - da dong bo so lieu run moi nhat)
 
-## 1. Tổng quan benchmark (run thật với API key)
+## 1. Benchmark Snapshot (real run)
 
-Lệnh chạy:
+Run command:
 ```bash
 python data/synthetic_gen.py
 python main.py
 python check_lab.py
 ```
 
-Nguồn số liệu:
+Data source:
 - `reports/summary.json`
 - `reports/benchmark_results.json`
 
-Kết quả V2 (Agent_V2_Optimized):
+Run metadata (V2):
+- Timestamp: **2026-04-21 15:37:28**
+- Version: **Agent_V2_Optimized**
 - Total cases: **60**
-- Pass / Fail / Error: **55 / 5 / 0**
-- Avg score: **4.2167**
+- Elapsed: **10.17s**
+
+V2 metrics (exact from `summary.json`):
+- Pass / Fail / Error: **54 / 6 / 0**
+- Avg score: **4.0583**
 - HitRate@3: **0.8667**
-- Agreement rate: **1.0000**
-- p95 latency: **0.0652s**
-- Total eval cost (judge): **$0.006348**
+- Agreement rate: **0.9333**
+- Cohen's Kappa: **0.5780**
+- p95 latency: **0.0642s**
+- Total eval cost (judge): **$0.079357**
+- Total tokens in / out: **42567 / 184**
 
 Regression (V1 -> V2):
-- Avg score delta: **+0.0834**
-- HitRate@3 delta: **+0.1000**
-- Gate decision: **BLOCK** (không đạt điều kiện delta score >= +0.2)
+- V1 avg_score: **4.1000**
+- V2 avg_score: **4.0583**
+- Delta avg_score: **-0.0417**
+- Delta hit_rate@3: **+0.1000**
+- Gate decision: **BLOCK**
+
+Release-gate reasons:
+- `avg_score delta -0.0417 < required +0.2 - FAIL`
+- `hit_rate@3 delta +0.1000 within tolerance - OK`
+- `agreement_rate 0.9333 >= 0.7 - OK`
+- `p95_latency 0.064s within 1.2x V1 - OK`
 
 ---
 
-## 2. Bonus Role 1 (retrieval stress-test)
+## 2. Bonus Role 1 (retrieval stress test)
 
-### 2.1. Top-k sensitivity (từ benchmark_results)
+### 2.1. Top-k sensitivity (from `benchmark_results.json`)
 
 | Metric | Value |
 |---|---:|
@@ -40,28 +55,27 @@ Regression (V1 -> V2):
 | HitRate@5 | **0.8667** |
 | MRR | **0.7917** |
 
-Nhận xét:
-- `Hit@3 - Hit@1 = +0.1334`, cho thấy hiệu quả tăng rõ khi mở rộng từ top-1 lên top-3.
-- `Hit@5` không tăng so với `Hit@3`, tức bottleneck nằm ở chất lượng xếp hạng top đầu, không phải thiếu độ phủ tài liệu ở top-5.
+Key readout:
+- `Hit@3 - Hit@1 = +0.1334` -> ranking quality improves clearly from top-1 to top-3.
+- `Hit@5 == Hit@3` -> expanding context beyond top-3 does not add recall gain in this run.
 
-### 2.2. Hard-cases retrieval fail-rate (điều kiện bonus >20%)
+### 2.2. Hard-cases pack fail rate (bonus condition >20%)
 
-Định nghĩa fail cho Role 1 bonus:
-- Một hard-case được tính fail nếu retrieval miss ở mức `hit_rate@3 = 0`.
-- Lý do dùng tiêu chí này: bonus Role 1 tập trung vào khả năng chịu tải của **retrieval stage** trước generation.
+Fail definition for Role 1 bonus:
+- A hard-case is counted as fail if retrieval misses at `hit_rate@3 = 0`.
 
 Hard-case scope:
 - `adversarial_prompt_injection` (12)
 - `edge_ambiguous_ooc` (8)
 - `conflicting_information` (6)
 - `multi_turn` (4)
-- Tổng: **30 cases**
+- Total: **30**
 
-Kết quả:
+Result:
 - Hard-case retrieval fail: **8 / 30**
-- Hard-case retrieval fail-rate: **26.67%** -> **đạt điều kiện bonus >20%**
+- Hard-case retrieval fail-rate: **26.67%** -> **passes bonus threshold (>20%)**
 
-Phân bổ retrieval fail theo loại:
+Breakdown by case type:
 
 | Case type | Retrieval fail | Total | Rate |
 |---|---:|---:|---:|
@@ -72,50 +86,57 @@ Phân bổ retrieval fail theo loại:
 
 ---
 
-## 3. Failure clustering (output từ runner)
+## 3. Failure clustering (exact from summary)
 
-Từ `summary.regression.failure_clusters`:
-- `prompt_attack`: `ADV-004`
-- `hallucination`: `EDGE-003`
-- `retrieval_miss`: `CFG-003`, `CFG-006`, `MTR-003`
-- `incomplete`: *(none)*
-- `tone_mismatch`: *(none)*
+From `summary.regression.failure_clusters` with **6 fail cases**:
+
+| Cluster | Cases | Score range |
+|---|---|---|
+| `prompt_attack` | `ADV-004`, `ADV-009` | 1.0 - 2.0 |
+| `retrieval_miss` | `CFG-003`, `CFG-006`, `MTR-003`, `MTR-004` | 1.0 - 2.0 |
+| `hallucination` | *(none)* | - |
+| `incomplete` | *(none)* | - |
+| `tone_mismatch` | *(none)* | - |
+
+Interpretation:
+- Main failure source is retrieval-level miss on conflicting and multi-turn cases.
+- Prompt-attack guardrail is triggered, but answer quality can still fail when context selection is off.
 
 ---
 
-## 4. 5 Whys (3 case fail tiêu biểu)
+## 4. 5 Whys (3 representative fail cases)
 
 ### Case #1: `CFG-006` (conflicting_information, retrieval_miss)
-1. **Symptom:** Trả lời sai chủ đề, đi vào release gate metric thay vì xử lý xung đột SLA 2h/4h.
-2. **Why 1:** Retriever lấy `doc_release_gate` thay vì `doc_sla_v2` + `doc_sla_legacy`.
-3. **Why 2:** Keyword “release gate” có trọng số cao hơn cụm entity SLA trong logic retrieval hiện tại.
-4. **Why 3:** Chưa có disambiguation layer để ưu tiên intent “conflicting policy resolution”.
-5. **Why 4:** Chưa có rerank theo entity trọng tâm (`SLA`, `2 giờ`, `4 giờ`).
-6. **Root cause:** Retrieval intent matching chưa đủ semantic, còn lệ thuộc keyword bề mặt.
+1. Symptom: answer drifts to release-gate metric instead of resolving SLA conflict (2h vs 4h).
+2. Why 1: retriever selected `doc_release_gate` instead of SLA conflict docs.
+3. Why 2: keyword overlap around "release" dominated ranking.
+4. Why 3: no intent disambiguation layer for conflicting-policy queries.
+5. Why 4: no rerank step weighted on SLA entities (`SLA`, `2h`, `4h`).
+6. Root cause: retrieval ranking is still keyword-heavy for conflict resolution cases.
 
-### Case #2: `EDGE-008` (edge_ambiguous_ooc, retrieval_miss)
-1. **Symptom:** Câu hỏi mơ hồ không trigger được `doc_clarification_policy`.
-2. **Why 1:** Retriever trả về doc liên quan judge thay vì clarify policy.
-3. **Why 2:** KEYWORD_MAP thiếu coverage cho biến thể diễn đạt mơ hồ.
-4. **Why 3:** Chưa có nhánh “ambiguity-first” ở tầng retrieval.
-5. **Why 4:** Query normalization hiện chưa xử lý tốt short/underspecified utterance.
-6. **Root cause:** Thiếu coverage và normalization cho ambiguous query class.
+### Case #2: `ADV-009` (adversarial_prompt_injection, prompt_attack)
+1. Symptom: injection was detected, but answer still referenced wrong supporting doc.
+2. Why 1: top context was not the most relevant doc for reranking question.
+3. Why 2: generation path relied on first context too early.
+4. Why 3: no post-retrieval semantic reranker before final answer synthesis.
+5. Why 4: keyword priority can over-weight generic "retrieval" topic.
+6. Root cause: combined ranking + generation-context coupling issue.
 
 ### Case #3: `MTR-003` (multi_turn, retrieval_miss)
-1. **Symptom:** Follow-up không kéo được doc hiệu năng phù hợp trong top-3.
-2. **Why 1:** Retriever chủ yếu match theo câu hỏi hiện tại, không khai thác đầy đủ context carry-over.
-3. **Why 2:** Từ khóa ở turn hiện tại không đủ mạnh để map vào doc mục tiêu.
-4. **Why 3:** Chưa có query rewriting sử dụng conversation history.
-5. **Why 4:** Chưa có chiến lược retrieval riêng cho multi-turn cases.
-6. **Root cause:** Multi-turn retrieval strategy chưa hoàn chỉnh (thiếu history-aware retrieval).
+1. Symptom: follow-up turn failed to retrieve performance doc in top-3.
+2. Why 1: retrieval matched current utterance too literally.
+3. Why 2: prior-turn intent was not rewritten into explicit query terms.
+4. Why 3: history-aware query rewriting is not enabled.
+5. Why 4: no dedicated multi-turn retrieval policy.
+6. Root cause: missing conversation-aware retrieval strategy.
 
 ---
 
-## 5. Action plan (Role 1 scope)
+## 5. Action plan (Role 1 scope only)
 
-- [ ] Bổ sung intent-aware query normalization cho `edge_ambiguous_ooc` và `conflicting_information`.
-- [ ] Mở rộng synonym/phrase coverage cho nhóm câu hỏi mơ hồ.
-- [ ] Thêm history-aware query rewriting cho `multi_turn`.
-- [ ] Theo dõi cố định 2 chỉ số bonus Role 1 qua mỗi run:
+- [ ] Add intent-aware query normalization for `edge_ambiguous_ooc` and `conflicting_information`.
+- [ ] Expand phrase/synonym coverage for ambiguous queries.
+- [ ] Add history-aware query rewriting for `multi_turn`.
+- [ ] Track fixed Role 1 bonus metrics on every run:
   - Top-k sensitivity (`Hit@1/@3/@5`, `MRR`)
-  - Hard-case retrieval fail-rate (`hit@3=0` trên hard-case pack)
+  - Hard-case retrieval fail-rate (`hit@3=0` on hard-cases pack)
